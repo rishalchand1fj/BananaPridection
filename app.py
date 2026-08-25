@@ -3,16 +3,20 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import os
+import traceback
 
 app = Flask(__name__)
 
-# Load trained model
+print("Loading model...")
+
 model = tf.keras.models.load_model(
     "banana_classifier.keras"
 )
 
+print("Model loaded successfully!")
+
 # IMPORTANT:
-# Make sure this order matches your Colab class_names
+# This order MUST match your Colab class_names
 class_names = [
     "banana",
     "not_banana"
@@ -29,25 +33,42 @@ def home():
 @app.route("/predict", methods=["POST"])
 def predict():
 
-    if "image" not in request.files:
-        return jsonify({
-            "error": "No image uploaded"
-        }), 400
-
-    file = request.files["image"]
-
-    if file.filename == "":
-        return jsonify({
-            "error": "No image selected"
-        }), 400
+    print("Prediction request received")
 
     try:
+
+        # Check file
+        if "image" not in request.files:
+            print("ERROR: No image in request")
+
+            return jsonify({
+                "error": "No image uploaded"
+            }), 400
+
+        file = request.files["image"]
+
+        print("Received file:", file.filename)
+
+        if file.filename == "":
+            return jsonify({
+                "error": "No image selected"
+            }), 400
 
         # Open image
         image = Image.open(file).convert("RGB")
 
-        # Resize to model input size
+        print(
+            "Original image size:",
+            image.size
+        )
+
+        # Resize
         image = image.resize(IMG_SIZE)
+
+        print(
+            "Resized image:",
+            image.size
+        )
 
         # Convert to NumPy
         image_array = np.array(image)
@@ -58,13 +79,23 @@ def predict():
             axis=0
         )
 
-        # Predict
+        print(
+            "Input shape:",
+            image_array.shape
+        )
+
+        # Prediction
         predictions = model.predict(
             image_array,
             verbose=0
         )[0]
 
-        # Highest probability
+        print(
+            "Predictions:",
+            predictions
+        )
+
+        # Get highest probability
         predicted_index = np.argmax(
             predictions
         )
@@ -74,7 +105,18 @@ def predict():
         ]
 
         confidence = (
-            predictions[predicted_index] * 100
+            predictions[predicted_index]
+            * 100
+        )
+
+        print(
+            "Prediction:",
+            predicted_class
+        )
+
+        print(
+            "Confidence:",
+            confidence
         )
 
         return jsonify({
@@ -86,6 +128,11 @@ def predict():
         })
 
     except Exception as e:
+
+        print("PREDICTION ERROR:")
+        print(str(e))
+
+        traceback.print_exc()
 
         return jsonify({
             "error": str(e)
