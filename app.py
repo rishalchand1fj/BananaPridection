@@ -7,11 +7,14 @@ import traceback
 
 app = Flask(__name__)
 
-print("=================================")
+print("================================")
 print("Starting Banana Classifier")
-print("=================================")
+print("================================")
 
+# -----------------------------
 # Load model
+# -----------------------------
+
 print("Loading model...")
 
 try:
@@ -22,78 +25,72 @@ try:
     print("MODEL LOADED SUCCESSFULLY")
 
 except Exception as e:
-
     print("MODEL LOADING FAILED")
-    print(str(e))
-
+    print(e)
     model = None
 
 
-# IMPORTANT:
-# Change this if your Colab class order is different
+# -----------------------------
+# Model settings
+# -----------------------------
+
+IMG_SIZE = (224, 224)
+
+# Change these if your training
+# class names are different
 class_names = [
     "banana",
     "not_banana"
 ]
 
-IMG_SIZE = (224, 224)
 
+# -----------------------------
+# Home page
+# -----------------------------
 
 @app.route("/")
 def home():
+    return render_template("index.html")
 
-    return render_template(
-        "index.html"
-    )
 
+# -----------------------------
+# Prediction
+# -----------------------------
 
 @app.route("/predict", methods=["POST"])
 def predict():
 
-    print("")
-    print("==============================")
+    print("\n==============================")
     print("PREDICTION REQUEST RECEIVED")
     print("==============================")
 
-
     try:
 
-        # -------------------------
         # Check model
-        # -------------------------
-
         if model is None:
 
             return jsonify({
-                "error":
-                "Model failed to load on server."
+                "success": False,
+                "error": "Model was not loaded."
             }), 500
 
 
-        # -------------------------
         # Check uploaded file
-        # -------------------------
-
         print(
-            "Files received:",
+            "Received files:",
             list(request.files.keys())
         )
 
 
         if "image" not in request.files:
 
-            print(
-                "ERROR: image field missing"
-            )
-
             return jsonify({
-                "error":
-                "No image was received."
+                "success": False,
+                "error": "No image was uploaded."
             }), 400
 
 
-        file =
-            request.files["image"]
+        file = request.files["image"]
 
 
         print(
@@ -105,65 +102,55 @@ def predict():
         if file.filename == "":
 
             return jsonify({
-                "error":
-                "No image selected."
+                "success": False,
+                "error": "No image was selected."
             }), 400
 
 
-        # -------------------------
         # Open image
-        # -------------------------
+        print("Opening image...")
+
+        image = Image.open(file)
 
         print(
-            "Opening image..."
+            "Original image:",
+            image.size,
+            image.mode
         )
 
 
-        image = Image.open(
-            file
-        ).convert("RGB")
+        # Convert to RGB
+        image = image.convert("RGB")
 
+
+        # Resize
+        image = image.resize(IMG_SIZE)
 
         print(
-            "Original size:",
+            "Resized image:",
             image.size
         )
 
 
-        # -------------------------
-        # Resize image
-        # -------------------------
-
-        image = image.resize(
-            IMG_SIZE
-        )
-
+        # Convert to numpy
+        image_array = np.array(image)
 
         print(
-            "Resized size:",
-            image.size
-        )
-
-
-        # -------------------------
-        # Convert to NumPy
-        # -------------------------
-
-        image_array = np.array(
-            image
-        )
-
-
-        print(
-            "Array shape:",
+            "Image array shape:",
             image_array.shape
         )
 
 
-        # -------------------------
-        # Add batch dimension
-        # -------------------------
+        # Normalize
+        #
+        # IMPORTANT:
+        # If your Colab training used rescaling
+        # such as /255, keep this.
+        #
+        image_array = image_array / 255.0
 
+
+        # Add batch dimension
         image_array = np.expand_dims(
             image_array,
             axis=0
@@ -171,18 +158,16 @@ def predict():
 
 
         print(
-            "Final input shape:",
+            "Model input shape:",
             image_array.shape
         )
 
 
-        # -------------------------
-        # Make prediction
-        # -------------------------
+        # -----------------------------
+        # Prediction
+        # -----------------------------
 
-        print(
-            "Running model prediction..."
-        )
+        print("Running prediction...")
 
 
         predictions = model.predict(
@@ -192,58 +177,93 @@ def predict():
 
 
         print(
-            "Raw prediction:",
+            "Raw model output:",
             predictions
         )
 
 
+        # Remove batch dimension
         predictions = predictions[0]
 
 
-        # -------------------------
-        # Find predicted class
-        # -------------------------
-
-        predicted_index = int(
-            np.argmax(predictions)
-        )
-
-
         print(
-            "Predicted index:",
-            predicted_index
+            "Processed output:",
+            predictions
         )
 
 
-        predicted_class = class_names[
-            predicted_index
-        ]
+        # -----------------------------
+        # Handle binary model
+        # -----------------------------
+
+        if np.size(predictions) == 1:
+
+            probability = float(
+                np.asarray(predictions).reshape(-1)[0]
+            )
 
 
-        confidence = float(
-            predictions[
+            # Assumption:
+            # 0 = not_banana
+            # 1 = banana
+
+            if probability >= 0.5:
+
+                predicted_class = "banana"
+
+                confidence = probability * 100
+
+            else:
+
+                predicted_class = "not_banana"
+
+                confidence = (
+                    1 - probability
+                ) * 100
+
+
+        # -----------------------------
+        # Handle 2-class model
+        # -----------------------------
+
+        else:
+
+            predicted_index = int(
+                np.argmax(predictions)
+            )
+
+
+            predicted_class = class_names[
                 predicted_index
-            ] * 100
-        )
+            ]
+
+
+            confidence = float(
+                predictions[
+                    predicted_index
+                ] * 100
+            )
 
 
         print(
-            "Predicted class:",
+            "FINAL PREDICTION:",
             predicted_class
         )
 
 
         print(
-            "Confidence:",
+            "CONFIDENCE:",
             confidence
         )
 
 
-        # -------------------------
+        # -----------------------------
         # Return JSON
-        # -------------------------
+        # -----------------------------
 
-        result = {
+        response = {
+
+            "success": True,
 
             "prediction":
                 predicted_class,
@@ -258,38 +278,29 @@ def predict():
 
         print(
             "Returning:",
-            result
+            response
         )
 
 
-        return jsonify(
-            result
-        )
+        return jsonify(response)
 
 
     except Exception as e:
 
-
-        print("")
-        print(
-            "!!!!!!!!!!!! ERROR !!!!!!!!!!!!"
-        )
-
+        print("\n!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("PREDICTION ERROR")
+        print("!!!!!!!!!!!!!!!!!!!!!!!!")
 
         print(
             str(e)
         )
 
-
         traceback.print_exc()
 
 
-        print(
-            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-        )
-
-
         return jsonify({
+
+            "success": False,
 
             "error":
                 str(e)
@@ -297,6 +308,9 @@ def predict():
         }), 500
 
 
+# -----------------------------
+# Start Flask
+# -----------------------------
 
 if __name__ == "__main__":
 
@@ -309,8 +323,6 @@ if __name__ == "__main__":
 
 
     app.run(
-
         host="0.0.0.0",
-
         port=port
     )
