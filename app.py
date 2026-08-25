@@ -1,78 +1,63 @@
-from flask import Flask, render_template, request, jsonify
 import os
-import traceback
 
-# Reduce TensorFlow messages
+# Must be before TensorFlow import
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-import tensorflow as tf
+import traceback
 import numpy as np
 from PIL import Image
+from flask import Flask, render_template, request, jsonify
+
+import tensorflow as tf
 
 
-# =========================================================
-# TENSORFLOW SETTINGS
-# =========================================================
+# =====================================================
+# TensorFlow resource limits
+# =====================================================
 
-# Limit CPU usage on Render
 tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.config.threading.set_inter_op_parallelism_threads(1)
 
 
-# =========================================================
-# FLASK APP
-# =========================================================
+# =====================================================
+# Flask
+# =====================================================
 
 app = Flask(__name__)
 
 
-# =========================================================
-# MODEL SETTINGS
-# =========================================================
+# =====================================================
+# Settings
+# =====================================================
 
 MODEL_PATH = "banana_classifier.keras"
-
-IMG_SIZE = (224, 224)
-
-# Change these if your training classes were different
-CLASS_NAMES = [
-    "Banana",
-    "Not Banana"
-]
+IMAGE_SIZE = (224, 224)
 
 
-# =========================================================
-# LOAD MODEL
-# =========================================================
+# =====================================================
+# Load model
+# =====================================================
 
-print("========================================")
-print("       BANANA CLASSIFIER")
-print("========================================")
-
-print("Loading model...")
+print("======================================")
+print("BANANA CLASSIFIER STARTING")
+print("======================================")
 
 try:
 
+    print("Loading model...")
+
     model = tf.keras.models.load_model(
-        MODEL_PATH
+        MODEL_PATH,
+        compile=False
     )
 
-    print("MODEL LOADED SUCCESSFULLY")
-
-    print(
-        "Model input shape:",
-        model.input_shape
-    )
-
-    print(
-        "Model output shape:",
-        model.output_shape
-    )
+    print("MODEL LOADED!")
+    print("INPUT:", model.input_shape)
+    print("OUTPUT:", model.output_shape)
 
 except Exception as e:
 
-    print("MODEL LOADING FAILED")
-
+    print("MODEL LOAD ERROR:")
     print(str(e))
 
     traceback.print_exc()
@@ -80,169 +65,176 @@ except Exception as e:
     model = None
 
 
-# =========================================================
-# HOME PAGE
-# =========================================================
+# =====================================================
+# Home
+# =====================================================
 
 @app.route("/")
 def home():
 
-    return render_template(
-        "index.html"
-    )
+    return render_template("index.html")
 
 
-# =========================================================
-# PREDICT
-# =========================================================
+# =====================================================
+# Health
+# =====================================================
 
-@app.route(
-    "/predict",
-    methods=["POST"]
-)
+@app.route("/health")
+def health():
+
+    return jsonify({
+        "status": "ok",
+        "model_loaded": model is not None
+    })
+
+
+# =====================================================
+# Prediction
+# =====================================================
+
+@app.route("/predict", methods=["POST"])
 def predict():
 
     print("")
-    print("========================================")
-    print("PREDICTION REQUEST RECEIVED")
-    print("========================================")
-
+    print("######################################")
+    print("PREDICT REQUEST")
+    print("######################################")
 
     try:
 
-        # -------------------------------------------------
-        # CHECK MODEL
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Model check
+        # ---------------------------------------------
 
         if model is None:
 
+            print("MODEL IS NONE")
+
             return jsonify({
                 "success": False,
-                "error": "Model was not loaded."
+                "error": "Model is not loaded"
             }), 500
 
 
-        # -------------------------------------------------
-        # CHECK IMAGE
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # File check
+        # ---------------------------------------------
+
+        print(
+            "Received files:",
+            list(request.files.keys())
+        )
+
 
         if "image" not in request.files:
 
+            print("NO IMAGE")
+
             return jsonify({
                 "success": False,
-                "error": "No image was uploaded."
+                "error": "No image field received"
             }), 400
 
 
         file = request.files["image"]
 
 
-        if file.filename == "":
-
-            return jsonify({
-                "success": False,
-                "error": "No image selected."
-            }), 400
-
-
         print(
-            "Image received:",
+            "Filename:",
             file.filename
         )
 
 
-        # -------------------------------------------------
-        # OPEN IMAGE
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Open image
+        # ---------------------------------------------
 
         print("Opening image...")
 
-
-        image = Image.open(
-            file
-        ).convert("RGB")
-
+        image = Image.open(file)
 
         print(
-            "Original image size:",
-            image.size
+            "Original:",
+            image.size,
+            image.mode
         )
 
 
-        # -------------------------------------------------
-        # RESIZE IMAGE
-        # -------------------------------------------------
+        image = image.convert("RGB")
+
+
+        # ---------------------------------------------
+        # Resize
+        # ---------------------------------------------
+
+        print("Resizing...")
 
         image = image.resize(
-            IMG_SIZE
+            IMAGE_SIZE
         )
 
 
-        print(
-            "Resized image:",
-            image.size
-        )
+        # ---------------------------------------------
+        # NumPy
+        # ---------------------------------------------
 
+        print("Converting to NumPy...")
 
-        # -------------------------------------------------
-        # CONVERT TO NUMPY
-        # -------------------------------------------------
-
-        image_array = np.array(
+        data = np.asarray(
             image,
             dtype=np.float32
         )
 
 
-        # -------------------------------------------------
-        # NORMALIZE
-        # -------------------------------------------------
-
-        image_array = (
-            image_array / 255.0
+        print(
+            "Array:",
+            data.shape
         )
 
 
-        # -------------------------------------------------
-        # ADD BATCH DIMENSION
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Normalize
+        # ---------------------------------------------
 
-        image_array = np.expand_dims(
-            image_array,
+        data = data / 255.0
+
+
+        # ---------------------------------------------
+        # Batch
+        # ---------------------------------------------
+
+        data = np.expand_dims(
+            data,
             axis=0
         )
 
 
         print(
-            "Input shape:",
-            image_array.shape
+            "Final input:",
+            data.shape
         )
 
 
-        print(
-            "Expected model input:",
-            model.input_shape
-        )
-
-
-        # -------------------------------------------------
-        # PREDICT
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Prediction
+        # ---------------------------------------------
 
         print("")
-        print("STARTING MODEL PREDICTION...")
+        print("**************************************")
+        print("CALLING MODEL.PREDICT")
+        print("**************************************")
 
 
         prediction = model.predict(
-            image_array,
+            data,
             batch_size=1,
             verbose=0
         )
 
 
-        print(
-            "PREDICTION FINISHED!"
-        )
+        print("**************************************")
+        print("MODEL.PREDICT FINISHED")
+        print("**************************************")
 
 
         print(
@@ -251,31 +243,24 @@ def predict():
         )
 
 
-        # -------------------------------------------------
-        # CONVERT OUTPUT
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Convert prediction
+        # ---------------------------------------------
 
         prediction = np.asarray(
             prediction
         )
 
 
-        # Remove batch dimension
-
-        if prediction.ndim > 1:
-
-            prediction = prediction[0]
-
-
         print(
-            "Processed prediction:",
-            prediction
+            "Prediction shape:",
+            prediction.shape
         )
 
 
-        # =================================================
-        # BINARY CLASSIFICATION
-        # =================================================
+        # ---------------------------------------------
+        # Binary classifier
+        # ---------------------------------------------
 
         if prediction.size == 1:
 
@@ -290,22 +275,9 @@ def predict():
             )
 
 
-            # ---------------------------------------------
-            # IMPORTANT
-            # ---------------------------------------------
-            #
-            # If your model was trained with:
-            #
-            # banana = 1
-            # not banana = 0
-            #
-            # this is correct.
-            #
-            # ---------------------------------------------
-
             if probability >= 0.5:
 
-                result = "Banana"
+                label = "Banana"
 
                 confidence = (
                     probability * 100
@@ -313,106 +285,92 @@ def predict():
 
             else:
 
-                result = "Not Banana"
+                label = "Not Banana"
 
                 confidence = (
-                    (1 - probability) * 100
+                    (1 - probability)
+                    * 100
                 )
 
 
-        # =================================================
-        # TWO-CLASS OUTPUT
-        # =================================================
+        # ---------------------------------------------
+        # Two-class classifier
+        # ---------------------------------------------
 
         else:
 
-            predicted_index = int(
-                np.argmax(
-                    prediction
-                )
+            prediction = prediction.flatten()
+
+            index = int(
+                np.argmax(prediction)
             )
 
 
-            print(
-                "Predicted class index:",
-                predicted_index
-            )
+            classes = [
+                "Banana",
+                "Not Banana"
+            ]
 
 
-            # Make sure index exists
+            if index < len(classes):
 
-            if (
-                predicted_index
-                < len(CLASS_NAMES)
-            ):
-
-                result = (
-                    CLASS_NAMES[
-                        predicted_index
-                    ]
-                )
+                label = classes[index]
 
             else:
 
-                result = (
-                    "Class "
-                    + str(predicted_index)
-                )
+                label = "Unknown"
 
 
-            confidence = float(
-                prediction[
-                    predicted_index
-                ] * 100
+            confidence = (
+                float(prediction[index])
+                * 100
             )
 
 
-        # -------------------------------------------------
-        # RESULT
-        # -------------------------------------------------
-
         print("")
-        print("========================================")
-        print("RESULT:", result)
+        print("RESULT:", label)
         print(
             "CONFIDENCE:",
-            round(confidence, 2),
-            "%"
+            confidence
         )
-        print("========================================")
 
 
-        # -------------------------------------------------
-        # RETURN JSON
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Return
+        # ---------------------------------------------
 
-        return jsonify({
+        response = {
 
             "success": True,
 
-            "prediction": result,
+            "prediction": label,
 
             "confidence": round(
                 confidence,
                 2
             )
 
-        })
+        }
 
 
-    # =====================================================
-    # ERROR
-    # =====================================================
+        print(
+            "Sending JSON:",
+            response
+        )
+
+
+        return jsonify(response)
+
 
     except Exception as e:
 
         print("")
-        print("========================================")
-        print("PREDICTION ERROR")
-        print("========================================")
+        print("######################################")
+        print("PREDICTION EXCEPTION")
+        print("######################################")
 
         print(
-            str(e)
+            repr(e)
         )
 
         traceback.print_exc()
@@ -427,31 +385,9 @@ def predict():
         }), 500
 
 
-# =========================================================
-# HEALTH CHECK
-# =========================================================
-
-@app.route("/health")
-def health():
-
-    if model is not None:
-
-        return jsonify({
-            "status": "ok",
-            "model": "loaded"
-        })
-
-    else:
-
-        return jsonify({
-            "status": "error",
-            "model": "not loaded"
-        }), 500
-
-
-# =========================================================
-# RUN APPLICATION
-# =========================================================
+# =====================================================
+# Start
+# =====================================================
 
 if __name__ == "__main__":
 
@@ -461,13 +397,6 @@ if __name__ == "__main__":
             5000
         )
     )
-
-
-    print(
-        "Starting Flask server on port",
-        port
-    )
-
 
     app.run(
         host="0.0.0.0",
