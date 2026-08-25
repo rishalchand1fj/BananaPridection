@@ -393,16 +393,14 @@
 
             catch (error) {
 
-                alert(
-                    "Something went wrong."
-                );
+    console.error(error);
 
-                console.error(
-                    error
-                );
+    alert(
+        "Prediction failed: "
+        + error.message
+    );
 
-            }
-
+}
             finally {
 
                 loading.style.display =
