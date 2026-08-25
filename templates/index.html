@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Banana Classifier</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(
+                135deg,
+                #fff8dc,
+                #f7e98e
+            );
+
+            min-height: 100vh;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 450px;
+            background: white;
+
+            padding: 35px;
+
+            border-radius: 20px;
+
+            box-shadow:
+                0 10px 30px
+                rgba(0, 0, 0, 0.15);
+
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #777;
+            margin-bottom: 25px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .browse-button {
+            display: inline-block;
+
+            background: #f5c400;
+            color: #222;
+
+            padding: 12px 25px;
+
+            border-radius: 10px;
+
+            cursor: pointer;
+
+            font-weight: bold;
+        }
+
+        .browse-button:hover {
+            background: #e5b600;
+        }
+
+        #preview {
+            display: none;
+
+            width: 250px;
+            height: 250px;
+
+            object-fit: contain;
+
+            margin: 25px auto;
+
+            border-radius: 15px;
+
+            border: 2px solid #ddd;
+        }
+
+        #predictButton {
+            display: none;
+
+            width: 100%;
+
+            padding: 14px;
+
+            margin-top: 10px;
+
+            border: none;
+
+            border-radius: 10px;
+
+            background: #333;
+
+            color: white;
+
+            font-size: 16px;
+
+            font-weight: bold;
+
+            cursor: pointer;
+        }
+
+        #predictButton:hover {
+            background: #555;
+        }
+
+        #result {
+            margin-top: 25px;
+
+            padding: 20px;
+
+            border-radius: 12px;
+
+            background: #f5f5f5;
+
+            display: none;
+        }
+
+        .prediction {
+            font-size: 26px;
+
+            font-weight: bold;
+
+            color: #333;
+        }
+
+        .confidence {
+            margin-top: 10px;
+
+            font-size: 18px;
+
+            color: #666;
+        }
+
+        .loading {
+            display: none;
+
+            margin-top: 15px;
+
+            color: #777;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+    <div class="container">
+
+        <h1>🍌 Banana Classifier</h1>
+
+        <p class="subtitle">
+            Upload an image to determine whether
+            it contains a banana.
+        </p>
+
+
+        <!-- File upload -->
+
+        <label
+            for="imageInput"
+            class="browse-button">
+
+            📁 Browse Image
+
+        </label>
+
+        <input
+            type="file"
+            id="imageInput"
+            accept="image/*">
+
+
+        <!-- Image preview -->
+
+        <img
+            id="preview"
+            alt="Image preview">
+
+
+        <!-- Predict button -->
+
+        <button
+            id="predictButton">
+
+            🔍 Predict
+
+        </button>
+
+
+        <!-- Loading -->
+
+        <div
+            id="loading"
+            class="loading">
+
+            Analyzing image...
+
+        </div>
+
+
+        <!-- Result -->
+
+        <div id="result">
+
+            <div
+                id="prediction"
+                class="prediction">
+            </div>
+
+            <div
+                id="confidence"
+                class="confidence">
+            </div>
+
+        </div>
+
+    </div>
+
+
+<script>
+
+    const imageInput =
+        document.getElementById(
+            "imageInput"
+        );
+
+    const preview =
+        document.getElementById(
+            "preview"
+        );
+
+    const predictButton =
+        document.getElementById(
+            "predictButton"
+        );
+
+    const result =
+        document.getElementById(
+            "result"
+        );
+
+    const prediction =
+        document.getElementById(
+            "prediction"
+        );
+
+    const confidence =
+        document.getElementById(
+            "confidence"
+        );
+
+    const loading =
+        document.getElementById(
+            "loading"
+        );
+
+
+    // When user selects an image
+
+    imageInput.addEventListener(
+        "change",
+        function () {
+
+            const file =
+                this.files[0];
+
+            if (file) {
+
+                const reader =
+                    new FileReader();
+
+                reader.onload =
+                    function (e) {
+
+                        preview.src =
+                            e.target.result;
+
+                        preview.style.display =
+                            "block";
+
+                        predictButton.style.display =
+                            "block";
+
+                        result.style.display =
+                            "none";
+                    };
+
+                reader.readAsDataURL(file);
+            }
+
+        }
+    );
+
+
+    // Predict button
+
+    predictButton.addEventListener(
+        "click",
+        async function () {
+
+            const file =
+                imageInput.files[0];
+
+            if (!file) {
+
+                alert(
+                    "Please select an image first."
+                );
+
+                return;
+            }
+
+
+            const formData =
+                new FormData();
+
+            formData.append(
+                "image",
+                file
+            );
+
+
+            loading.style.display =
+                "block";
+
+            result.style.display =
+                "none";
+
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/predict",
+                        {
+                            method: "POST",
+                            body: formData
+                        }
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (data.error) {
+
+                    alert(
+                        data.error
+                    );
+
+                    return;
+                }
+
+
+                prediction.textContent =
+                    "Prediction: "
+                    + data.prediction;
+
+
+                confidence.textContent =
+                    "Confidence: "
+                    + data.confidence
+                    + "%";
+
+
+                result.style.display =
+                    "block";
+
+            }
+
+            catch (error) {
+
+                alert(
+                    "Something went wrong."
+                );
+
+                console.error(
+                    error
+                );
+
+            }
+
+            finally {
+
+                loading.style.display =
+                    "none";
+
+            }
+
+        }
+    );
+
+</script>
+
+</body>
+
+</html>
