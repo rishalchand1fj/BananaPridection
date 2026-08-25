@@ -7,16 +7,30 @@ import traceback
 
 app = Flask(__name__)
 
+print("=================================")
+print("Starting Banana Classifier")
+print("=================================")
+
+# Load model
 print("Loading model...")
 
-model = tf.keras.models.load_model(
-    "banana_classifier.keras"
-)
+try:
+    model = tf.keras.models.load_model(
+        "banana_classifier.keras"
+    )
 
-print("Model loaded successfully!")
+    print("MODEL LOADED SUCCESSFULLY")
+
+except Exception as e:
+
+    print("MODEL LOADING FAILED")
+    print(str(e))
+
+    model = None
+
 
 # IMPORTANT:
-# This order MUST match your Colab class_names
+# Change this if your Colab class order is different
 class_names = [
     "banana",
     "not_banana"
@@ -27,116 +41,261 @@ IMG_SIZE = (224, 224)
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+
+    return render_template(
+        "index.html"
+    )
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
 
-    print("Prediction request received")
+    print("")
+    print("==============================")
+    print("PREDICTION REQUEST RECEIVED")
+    print("==============================")
+
 
     try:
 
-        # Check file
-        if "image" not in request.files:
-            print("ERROR: No image in request")
+        # -------------------------
+        # Check model
+        # -------------------------
+
+        if model is None:
 
             return jsonify({
-                "error": "No image uploaded"
+                "error":
+                "Model failed to load on server."
+            }), 500
+
+
+        # -------------------------
+        # Check uploaded file
+        # -------------------------
+
+        print(
+            "Files received:",
+            list(request.files.keys())
+        )
+
+
+        if "image" not in request.files:
+
+            print(
+                "ERROR: image field missing"
+            )
+
+            return jsonify({
+                "error":
+                "No image was received."
             }), 400
 
-        file = request.files["image"]
 
-        print("Received file:", file.filename)
+        file =
+            request.files["image"]
+
+
+        print(
+            "Filename:",
+            file.filename
+        )
+
 
         if file.filename == "":
+
             return jsonify({
-                "error": "No image selected"
+                "error":
+                "No image selected."
             }), 400
 
+
+        # -------------------------
         # Open image
-        image = Image.open(file).convert("RGB")
+        # -------------------------
 
         print(
-            "Original image size:",
+            "Opening image..."
+        )
+
+
+        image = Image.open(
+            file
+        ).convert("RGB")
+
+
+        print(
+            "Original size:",
             image.size
         )
 
-        # Resize
-        image = image.resize(IMG_SIZE)
+
+        # -------------------------
+        # Resize image
+        # -------------------------
+
+        image = image.resize(
+            IMG_SIZE
+        )
+
 
         print(
-            "Resized image:",
+            "Resized size:",
             image.size
         )
 
+
+        # -------------------------
         # Convert to NumPy
-        image_array = np.array(image)
+        # -------------------------
 
+        image_array = np.array(
+            image
+        )
+
+
+        print(
+            "Array shape:",
+            image_array.shape
+        )
+
+
+        # -------------------------
         # Add batch dimension
+        # -------------------------
+
         image_array = np.expand_dims(
             image_array,
             axis=0
         )
 
+
         print(
-            "Input shape:",
+            "Final input shape:",
             image_array.shape
         )
 
-        # Prediction
+
+        # -------------------------
+        # Make prediction
+        # -------------------------
+
+        print(
+            "Running model prediction..."
+        )
+
+
         predictions = model.predict(
             image_array,
             verbose=0
-        )[0]
+        )
+
 
         print(
-            "Predictions:",
+            "Raw prediction:",
             predictions
         )
 
-        # Get highest probability
-        predicted_index = np.argmax(
-            predictions
+
+        predictions = predictions[0]
+
+
+        # -------------------------
+        # Find predicted class
+        # -------------------------
+
+        predicted_index = int(
+            np.argmax(predictions)
         )
+
+
+        print(
+            "Predicted index:",
+            predicted_index
+        )
+
 
         predicted_class = class_names[
             predicted_index
         ]
 
-        confidence = (
-            predictions[predicted_index]
-            * 100
+
+        confidence = float(
+            predictions[
+                predicted_index
+            ] * 100
         )
 
+
         print(
-            "Prediction:",
+            "Predicted class:",
             predicted_class
         )
+
 
         print(
             "Confidence:",
             confidence
         )
 
-        return jsonify({
-            "prediction": predicted_class,
-            "confidence": round(
-                float(confidence),
-                2
-            )
-        })
+
+        # -------------------------
+        # Return JSON
+        # -------------------------
+
+        result = {
+
+            "prediction":
+                predicted_class,
+
+            "confidence":
+                round(
+                    confidence,
+                    2
+                )
+        }
+
+
+        print(
+            "Returning:",
+            result
+        )
+
+
+        return jsonify(
+            result
+        )
+
 
     except Exception as e:
 
-        print("PREDICTION ERROR:")
-        print(str(e))
+
+        print("")
+        print(
+            "!!!!!!!!!!!! ERROR !!!!!!!!!!!!"
+        )
+
+
+        print(
+            str(e)
+        )
+
 
         traceback.print_exc()
 
+
+        print(
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        )
+
+
         return jsonify({
-            "error": str(e)
+
+            "error":
+                str(e)
+
         }), 500
+
 
 
 if __name__ == "__main__":
@@ -148,7 +307,10 @@ if __name__ == "__main__":
         )
     )
 
+
     app.run(
+
         host="0.0.0.0",
+
         port=port
     )
